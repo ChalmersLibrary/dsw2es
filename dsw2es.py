@@ -551,7 +551,7 @@ for i in data['_embedded']['questionnaires']:
             d['dataset'] = dsts_empty
             print('generic (dummy) dataset added')
 
-        # Additional metadata (local)
+        # Extensions (local)
 
         md['indexed'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -632,6 +632,7 @@ for i in data['_embedded']['questionnaires']:
                     storage_needs = 'unknown'
                 md['storage_needs'] = storage_needs
 
+
         if '10a10ffd-bfe1-4c6b-bbb6-3dfb1e63a5d5.1cc02007-5443-49f2-ba73-216d6f5b1f4f' in data_full['replies']:
             storage_needs_id = \
                 data_full['replies']['10a10ffd-bfe1-4c6b-bbb6-3dfb1e63a5d5.1cc02007-5443-49f2-ba73-216d6f5b1f4f'][
@@ -648,6 +649,26 @@ for i in data['_embedded']['questionnaires']:
             else:
                 storage_needs = 'unknown'
             md['storage_needs'] = storage_needs
+
+        # Ethical review
+        ethical_review_needed = 'no'
+
+        if config.get('Paths', 'ethical_review_applied') in data_full['replies']:
+            print("ethical found")
+            if \
+                    data_full['replies'][config.get('Paths', 'ethical_review_applied')][
+                        'value']['value'] == config.get('Paths', 'ethical_review_applied.yes'):
+                ethical_review_needed = 'yes'
+            if \
+                    data_full['replies'][config.get('Paths', 'ethical_review_categories')][
+                        'value']['value'] == config.get('Paths', 'ethical_review_categories.yes'):
+                ethical_review_needed = 'yes'
+            if \
+                    data_full['replies'][config.get('Paths', 'ethical_review_support')][
+                        'value']['value'] == config.get('Paths', 'ethical_review_support.yes'):
+                ethical_review_needed = 'yes'
+            md['ethical_review_needed'] = ethical_review_needed
+        
 
         dmp['dmp'] = d
         dmp['metadata'] = md
