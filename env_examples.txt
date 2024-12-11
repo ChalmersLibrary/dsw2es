@@ -6,5 +6,5 @@ ELASTIC_INDEX_NAME=dsw-dmps-test
 DSW_URL=https://url-to-dsw-incl-port:3443
 DSW_USER=dsw-userid
 DSW_PW=dsw-password
-DSW_PW=BASEURL=https://dsw-staging.ita.chalmers.se/projects/
+DSW_BASEURL=https://dsw-staging.ita.chalmers.se/wizard/projects/
 LOGFILE=dsw2es.log
