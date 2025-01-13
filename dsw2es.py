@@ -659,17 +659,18 @@ for i in data['_embedded']['questionnaires']:
                     data_full['replies'][config.get('Paths', 'ethical_review_applied')][
                         'value']['value'] == config.get('Paths', 'ethical_review_applied.yes'):
                 ethical_review_needed = 'yes'
-            if \
+            if config.get('Paths', 'ethical_review_categories') in data_full['replies']:
+                if \
                     data_full['replies'][config.get('Paths', 'ethical_review_categories')][
                         'value']['value'] == config.get('Paths', 'ethical_review_categories.yes'):
-                ethical_review_needed = 'yes'
-            if \
-                    data_full['replies'][config.get('Paths', 'ethical_review_support')][
-                        'value']['value'] == config.get('Paths', 'ethical_review_support.yes'):
-                ethical_review_needed = 'yes'
+                    ethical_review_needed = 'yes'
+            if config.get('Paths', 'ethical_review_support') in data_full['replies']:
+                if \
+                        data_full['replies'][config.get('Paths', 'ethical_review_support')][
+                            'value']['value'] == config.get('Paths', 'ethical_review_support.yes'):
+                    ethical_review_needed = 'yes'
             md['ethical_review_needed'] = ethical_review_needed
         
-
         dmp['dmp'] = d
         dmp['metadata'] = md
 
