@@ -179,6 +179,24 @@ for i in data['_embedded']['questionnaires']:
             print('User has not responded to the disclaimer for dmp id: ' + str(dmp_id) + '!')
             md['disclaimer_allow_sharing'] = 'missing / not answered'
 
+        # Disclaimer, EU KM
+        if config.get('Paths', 'disclaimer_eu') in data_full['replies']:
+            disclaimer_eu_replies_node = config.get('Paths', 'disclaimer_eu')
+            disclaimer_eu_answer = data_full['replies'][disclaimer_eu_replies_node]['value']['value']
+            print('disclaimer path: ' + str(disclaimer_eu_answer))
+            if disclaimer_eu_answer == config.get('Paths', 'disclaimer_eu_answer_no'):
+                print('User has rejected the disclaimer for dmp id: ' + str(dmp_id) + '!')
+                md['disclaimer_allow_sharing'] = 'no'
+            elif disclaimer_eu_answer == config.get('Paths', 'disclaimer_eu_answer_yes'):
+                print('User has approved the disclaimer for dmp id: ' + str(dmp_id) + '!')
+                md['disclaimer_allow_sharing'] = 'yes'
+            else:
+                print('User has not responded to the disclaimer for dmp id: ' + str(dmp_id) + '!')
+                md['disclaimer_allow_sharing'] = 'missing / not answered'
+        else:
+            print('User has not responded to the disclaimer for dmp id: ' + str(dmp_id) + '!')
+            md['disclaimer_allow_sharing'] = 'missing / not answered'
+
         # Contact and contributor(s)
 
         if config.get('Paths', 'contributors') in data_full['replies']:
