@@ -692,6 +692,25 @@ for i in data['_embedded']['questionnaires']:
                             'value']['value'] == config.get('Paths', 'ethical_review_support.yes'):
                     ethical_review_needed = 'yes'
             md['ethical_review_needed'] = ethical_review_needed
+
+        # Ethical review 
+        if config.get('Paths', 'ethical_review_applied_he') in data_full['replies']:
+            print("ethical found")
+            if \
+                    data_full['replies'][config.get('Paths', 'ethical_review_applied_he')][
+                        'value']['value'] == config.get('Paths', 'ethical_review_applied_he.yes'):
+                ethical_review_needed = 'yes'
+            if config.get('Paths', 'ethical_review_categories_he') in data_full['replies']:
+                if \
+                    data_full['replies'][config.get('Paths', 'ethical_review_categories_he')][
+                        'value']['value'] == config.get('Paths', 'ethical_review_categories_he.yes'):
+                    ethical_review_needed = 'yes'
+            if config.get('Paths', 'ethical_review_support_he') in data_full['replies']:
+                if \
+                        data_full['replies'][config.get('Paths', 'ethical_review_support_he')][
+                            'value']['value'] == config.get('Paths', 'ethical_review_support_he.yes'):
+                    ethical_review_needed = 'yes'
+            md['ethical_review_needed'] = ethical_review_needed
         
         dmp['dmp'] = d
         dmp['metadata'] = md
