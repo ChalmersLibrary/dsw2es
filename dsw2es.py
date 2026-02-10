@@ -126,15 +126,17 @@ for i in data['_embedded']['questionnaires']:
 
         d['dmp_id'] = di
 
-        if i['package']:
-            d[
-                'description'] = "This DMP has been created using Chalmers Data Stewardship Wizard (dsw.chalmers.se) " \
+        if i['knowledgeModelPackage'] in i:
+            d['description'] = "This DMP has been created using Chalmers Data Stewardship Wizard (dsw.chalmers.se) " \
                                  "and is based on the knowledge model " + \
-                                 i['package']['name'] + " (" + i['package']['id'] + ")."
-            if "swe" in i['package']['id']:
+                                 i['knowledgeModelPackage']['name'] + " (" + i['knowledgeModelPackage']['id'] + ")."
+            if "swe" in i['knowledgeModelPackage']['id']:
                 d['language'] = 'swe'
             else:
                 d['language'] = 'eng'
+        else:
+            d['description'] = "This DMP has been created using Chalmers Data Stewardship Wizard (dsw.chalmers.se)."
+            d['language'] = 'eng'
 
         md['id'] = dmp_id
         if state:
