@@ -126,7 +126,7 @@ for i in data['_embedded']['questionnaires']:
 
         d['dmp_id'] = di
 
-        if i['knowledgeModelPackage'] in i:
+        if 'knowledgeModelPackage' in i:
             d['description'] = "This DMP has been created using Chalmers Data Stewardship Wizard (dsw.chalmers.se) " \
                                  "and is based on the knowledge model " + \
                                  i['knowledgeModelPackage']['name'] + " (" + i['knowledgeModelPackage']['id'] + ")."
