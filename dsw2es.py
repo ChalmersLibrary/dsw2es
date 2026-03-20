@@ -80,7 +80,7 @@ except elasticsearch.exceptions.RequestError as e:
         sys.exit()
 
 # Request data from DSW as string
-dsw_geturl = dswurl + '/questionnaires?isTemplate=false&sort=createdAt%2Cdesc&size=500'
+dsw_geturl = dswurl + '/projects?isTemplate=false&sort=createdAt%2Cdesc&size=500'
 data = requests.get(url=dsw_geturl, headers=headers).text
 
 # convert string to Json
@@ -93,7 +93,7 @@ dmp = {}
 count = 0
 madmp_schema = "https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.1"
 
-for i in data['_embedded']['questionnaires']:
+for i in data['_embedded']['projects']:
     import_this = 'true'
     is_outdated = 'false'
     d = dict()
@@ -149,7 +149,7 @@ for i in data['_embedded']['questionnaires']:
             md['description'] = i['description']
 
         # request full doc from DSW
-        link_full = dswurl + '/questionnaires/' + str(dmp_id) + '/questionnaire'
+        link_full = dswurl + '/projects/' + str(dmp_id) + '/questionnaire'
 
         # debug
         # print ('link full: {}'.format(link_full))
