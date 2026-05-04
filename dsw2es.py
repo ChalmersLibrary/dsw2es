@@ -4,9 +4,11 @@
 import requests
 import json
 import sys
+import warnings
 import elasticsearch
 import uuid as uuid
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, ElasticsearchWarning
+warnings.filterwarnings('ignore', category=ElasticsearchWarning)
 import os
 from dotenv import load_dotenv
 import logging
@@ -60,24 +62,19 @@ except requests.exceptions.HTTPError as e:
 headers = {'Accept': 'application/json',
            'Authorization': 'Bearer ' + dsw_token}
 
-# Create new index (or replace existing)
 # Require elasticsearch >=7.16.3 to work with ES 6.x
 elastic = Elasticsearch([{'host': esurl, 'port': esport, 'use_ssl': True}], http_auth=(esuser, espw))
-try:
-    create_resp = elastic.indices.create(index=esindex, ignore=[400, 404])
 
-    # print(create_resp)
-    logger.info('Index ' + esindex + ' was successfully created.')
-    print('Index ' + esindex + ' was successfully created.')
+# Create a temporary index; swap it into production only if indexing succeeds
+tmp_index = esindex + '.' + datetime.now().strftime('%Y%m%d.%H%M%S')
+try:
+    elastic.indices.create(index=tmp_index)
+    logger.info('Temporary index ' + tmp_index + ' created.')
+    print('Temporary index ' + tmp_index + ' created.')
 except elasticsearch.exceptions.RequestError as e:
-    if e.error == 'resource_already_exists_exception':
-        # print('We will ignore this')
-        pass  # Index already exists. Ignore, it will be recreated.
-    else:  # Other exception - raise it
-        logger.error('Index ' + esindex + ' could not be created: ' + e.error)
-        print('Index ' + esindex + ' could not be created: ' + e.error)
-        raise e
-        sys.exit()
+    logger.error('Could not create temporary index ' + tmp_index + ': ' + e.error)
+    print('Could not create temporary index ' + tmp_index + ': ' + e.error)
+    sys.exit(1)
 
 # Request data from DSW as string
 dsw_geturl = dswurl + '/projects?isTemplate=false&sort=createdAt%2Cdesc&size=500'
@@ -91,7 +88,8 @@ data = json.loads(data)
 
 dmp = {}
 count = 0
-madmp_schema = "https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.1"
+index_errors = 0
+madmp_schema = "https://github.com/RDA-DMP-Common/RDA-DMP-Common-Standard/tree/master/examples/JSON/JSON-schema/1.2"
 
 for i in data['_embedded']['projects']:
     import_this = 'true'
@@ -204,8 +202,8 @@ for i in data['_embedded']['projects']:
                 md['disclaimer_allow_sharing'] = 'missing / not answered'
 
         # Contact and contributor(s)
-
-        if config.get('Paths', 'contributors') in data_full['replies']:
+        # If there are no (or only empty) contributors, skip this DMP
+        if (config.get('Paths', 'contributors') in data_full['replies'] and data_full['replies'][config.get('Paths', 'contributors')]['value']['value']):
             contributors = data_full['replies'][
                 config.get('Paths', 'contributors')]
 
@@ -223,40 +221,49 @@ for i in data['_embedded']['projects']:
                         ct["name"] = contributor_name
                     except KeyError:
                         contributor_name = ''
+                        # Skip this contributor if we cannot find any name, as this is a mandatory field in the standard
+                        continue
                     try:
                         email_node = contributor + "." + config.get('Paths', 'contributor.email')
                         contributor_email = data_full['replies'][email_node]['value']['value']
                         ct["mbox"] = contributor_email
                     except KeyError:
-                        contributor_email = ''
+                        contributor_email = "email-missing@chalmers.se"
+                        # Return dummy (empty) email to comply with standard, even if we don't have any value for it
+                        ct["mbox"] = contributor_email
                     try:
                         orcid_node = contributor + "." + config.get('Paths', 'contributor.orcid')
                         contributor_orcid = data_full['replies'][orcid_node]['value']['value']
                         ct["contributor_id"] = {"identifier": contributor_orcid, "type": "orcid"}
                     except KeyError:
                         contributor_orcid = ''
+                        # Return empty contributor_id to comply with standard, even if we don't have any value for it
+                        ct["contributor_id"] = []
                     try:
-                        ct["affiliation"] = {}
+                        ct["affiliation"] = [{}]
+                        # Default value, to be overwritten if we find any affiliation information. Todo: multipart affiliations in HE KM
+                        ct["affiliation"] = [{"name": "Chalmers University of Technology",
+                                                  "affiliation_id": {"identifier": "https://ror.org/040wg7k59", "type": "ror"}}]
                         affiliation_node = contributor + '.' + config.get('Paths', 'contributor.affiliation');
                         # print('aff node: ' + affiliation_node)
                         # Non-standard field (CTH), separate field for Horizon Europe KM
 
                         if affiliation_node + '.' + config.get('Paths', 'contributor.affiliation.cth') in \
                                 data_full['replies']:
-                            ct["affiliation"] = {"name": "Chalmers University of Technology",
-                                                 "affiliation_id": {"name": "https://ror.org/040wg7k59", "type": "ror"}}
+                            ct["affiliation"] = [{"name": "Chalmers University of Technology",
+                                                  "affiliation_id": {"identifier": "https://ror.org/040wg7k59", "type": "ror"}}]
                         if affiliation_node in data_full['replies'] and data_full['replies'][affiliation_node]['value'][
                             'value'] == config.get('Paths', 'contributor.affiliation.gu'):
-                            ct["affiliation"] = {"name": "University of Gothenburg",
-                                                 "affiliation_id": {"name": "https://ror.org/01tm6cn81", "type": "ror"}}
+                            ct["affiliation"] = [{"name": "University of Gothenburg",
+                                                  "affiliation_id": {"identifier": "https://ror.org/01tm6cn81", "type": "ror"}}]
                         if affiliation_node + '.' + config.get('Paths', 'contributor.affiliation.other') in \
                                 data_full['replies']:
                             affiliation_other = affiliation_node + '.' + config.get('Paths',
                                                                                     'contributor.affiliation.other')
                             affiliation_other_name = data_full['replies'][affiliation_other]['value']['value']['value']
                             affiliation_other_id = data_full['replies'][affiliation_other]['value']['value']['id']
-                            ct["affiliation"] = {"name": affiliation_other_name,
-                                                 "affiliation_id": {"name": affiliation_other_id, "type": "ror"}}
+                            ct["affiliation"] = [{"name": affiliation_other_name,
+                                                  "affiliation_id": {"identifier": affiliation_other_id, "type": "ror"}}]
                         # HE
                         if 'root-he' in data_full['knowledgeModelPackageId']:
                             if affiliation_node in data_full['replies']:
@@ -264,13 +271,15 @@ for i in data['_embedded']['projects']:
                                 affiliation_he_name = data_full['replies'][affiliation_he]['value']['value'][
                                     'value']
                                 affiliation_he_id = data_full['replies'][affiliation_he]['value']['value']['id']
-                                ct["affiliation"] = {"name": affiliation_he_name,
-                                                     "affiliation_id": {"name": affiliation_he_id, "type": "ror"}}
+                                ct["affiliation"] = [{"name": affiliation_he_name,
+                                                      "affiliation_id": {"identifier": affiliation_he_id, "type": "ror"}}]
                                 print("aff_node_he: " + affiliation_he)
                             # print('aff: ' + contributor_name + ', ' + str(ct['affiliation']))
                     except KeyError:
                         print('no affiliations')
-                        ct["affiliation"] = {}
+                        # Default value, if we cannot find any affiliation information. Todo: multipart affiliations in HE KM
+                        ct["affiliation"] = [{"name": "Chalmers University of Technology",
+                                              "affiliation_id": {"identifier": "https://ror.org/040wg7k59", "type": "ror"}}]
                     try:
                         # default value, todo: multipart roles in HE KM
                         contributor_role = 'contact person'
@@ -282,6 +291,9 @@ for i in data['_embedded']['projects']:
                             contributor_role = 'contact person'
                             if contributor_orcid:
                                 cc['contact_id'] = {"identifier": contributor_orcid, "type": "orcid"}
+                            else:
+                                # Return dummy (empty) contact_id to comply with standard, even if we don't have any value for it
+                                cc['contact_id'] = [{"identifier": "none", "type": "other"}]
                             cc['affiliation'] = ct['affiliation']
                             cc['name'] = contributor_name
                             if contributor_email:
@@ -302,10 +314,15 @@ for i in data['_embedded']['projects']:
                             contributor_role = 'contact person'
                             if contributor_orcid:
                                 cc['contact_id'] = {"identifier": contributor_orcid, "type": "orcid"}
+                            else:
+                                # Return dummy (empty) contact_id to comply with standard, even if we don't have any value for it
+                                cc['contact_id'] = [{"identifier": "none", "type": "other"}]
                             cc['affiliation'] = ct['affiliation']
                             cc['name'] = contributor_name
                             if contributor_email:
                                 cc['mbox'] = contributor_email
+                            else:
+                                cc["mbox"] = "email-missing@chalmers.se"
                         # else:
                         #    contributor_role = 'other'
                     except KeyError:
@@ -320,6 +337,22 @@ for i in data['_embedded']['projects']:
                 md['hasContactPerson'] = 'true'
             else:
                 md['hasContactPerson'] = 'false'
+                # Use first contributor as contact if we don't have any specific contact information, to comply with standard
+                if cs:
+                    contact = dict(cs[0])
+                    if 'contributor_id' in contact:
+                        contact['contact_id'] = contact.pop('contributor_id')
+                    if contact['contact_id'] == []:
+                        contact['contact_id'] = [{"identifier": "none", "type": "other"}]
+                    contact.pop('role', None)
+                    d["contact"] = contact
+                    print('No specific contact person defined for DMP id: ' + dmp_id + ' , name: ' + dmp_name + ', using first contributor as contact.')
+            if cs == []:
+                print('No contributors with names found for DMP id: ' + dmp_id + ' , name: ' + dmp_name + ', skipping this DMP.')
+                import_this = 'false'
+        else:
+            print('Skipping DMP id: ' + dmp_id + ' , name: ' + dmp_name + ' due to missing mandatory fields.')
+            import_this = 'false'
 
         # Projects and funding
 
@@ -340,6 +373,8 @@ for i in data['_embedded']['projects']:
                         pt["title"] = pname
                     except KeyError:
                         pname = ''
+                        # Add dummy title to comply with standard, even if we don't have any value for it
+                        pt["title"] = "(Project information missing)"
                     try:
                         pdesc_node = project + "." + config.get('Paths', 'project.desc')
                         pdesc = data_full['replies'][pdesc_node]['value']['value']
@@ -389,6 +424,8 @@ for i in data['_embedded']['projects']:
                                     pfn['funder_id'] = {'identifier': pf_funder, 'type': 'url'}
                             except KeyError:
                                 pfunder = ''
+                                # Return dummy (empty) funder_id to comply with standard, even if we don't have any value for it
+                                pfn['funder_id'] = {"identifier": "none", "type": "other"}
                             try:
                                 pf_grant_node = funding + "." + config.get('Paths', 'project.funder.grant')
                                 pf_grant = data_full['replies'][pf_grant_node]['value']['value']
@@ -423,6 +460,18 @@ for i in data['_embedded']['projects']:
                         print('nothing to add')
 
             d['project'] = ps
+        else:
+            print('NO PROJECTS')
+            # Create dummy project to comply with standard
+            md['hasProject'] = 'false'
+            pt_empty = {"title": "Generic project", "description": "No project information has been defined for this DMP.", "funding": [
+							{
+								"funder_id": {"identifier": "none", "type": "other"},
+								"funding_status": "applied",
+                                "grant_id": {"identifier": "none", "type": "other"},
+							}
+						]}
+            d['project'] = [pt_empty]
 
         # Ethical issues
 
@@ -476,13 +525,16 @@ for i in data['_embedded']['projects']:
 
         md['hasDatasets'] = 'false'
 
-        if 'd5b27482-b598-4b8c-b534-417d4ad27394.4e0c1edf-660c-4ebf-81f5-9fa959dead30' in data_full['replies']:
+        if ('d5b27482-b598-4b8c-b534-417d4ad27394.4e0c1edf-660c-4ebf-81f5-9fa959dead30' in data_full['replies'] and data_full['replies']['d5b27482-b598-4b8c-b534-417d4ad27394.4e0c1edf-660c-4ebf-81f5-9fa959dead30']['value']['value']):
+
             datasets = data_full['replies']['d5b27482-b598-4b8c-b534-417d4ad27394.4e0c1edf-660c-4ebf-81f5-9fa959dead30']
 
             if datasets:
                 dsts = []
                 md['hasDatasets'] = 'true'
                 dstname = ''
+                dstpersdata = 'unknown'
+                dstsensdata = 'unknown'
                 for dst in \
                         data_full['replies'][
                             'd5b27482-b598-4b8c-b534-417d4ad27394.4e0c1edf-660c-4ebf-81f5-9fa959dead30'][
@@ -513,7 +565,8 @@ for i in data['_embedded']['projects']:
                             dstpersdata = 'unknown'
                         dset['personal_data'] = dstpersdata
                     except KeyError:
-                        dstpersdata = ''
+                        dstpersdata = 'unknown'
+                        dset['personal_data'] = dstpersdata
                     try:
                         dstsensdata_node = dataset + ".cc95b399-7d8d-4232-bccf-686f78c91bff"
                         dstsensdata_id = data_full['replies'][dstsensdata_node]['value']['value']
@@ -525,7 +578,8 @@ for i in data['_embedded']['projects']:
                             dstsensdata = 'unknown'
                         dset['sensitive_data'] = dstsensdata
                     except KeyError:
-                        dstsensdata = ''
+                        dstsensdata = 'unknown'
+                        dset['sensitive_data'] = dstsensdata
                     dset["dataset_id"] = {'identifier': str(uuid.uuid4()), 'type': 'other'}
                     try:
                         dstid_node = dataset + ".cf727a0a-78c4-45a7-aa9b-cf7650ae873a"
@@ -562,6 +616,19 @@ for i in data['_embedded']['projects']:
                     if dsts:
                         d['dataset'] = dsts
                         print('dataset added')
+                    else:
+                        print('No datasets with titles found for DMP id: ' + dmp_id + ' , name: ' + dmp_name + ', skipping datasets for this DMP.')
+                        print('NO DATASETS')
+                        # Create a generic (empty) set to comply with standard
+                        md['hasDatasets'] = 'false'
+                        dsts_empty = []
+                        dset_empty = {"type": 'dataset', "title": 'Generic dataset',
+                                      "description": 'No individual datasets have been defined for this DMP.',
+                                      "dataset_id": {'identifier': str(uuid.uuid4()), 'type': 'other'}, "sensitive_data": 'unknown',
+                                      "personal_data": 'unknown'}
+                        dsts_empty.append(dset_empty)
+                        d['dataset'] = dsts_empty
+                        print('generic (dummy) dataset added')  
         else:
             print('NO DATASETS')
             # Create a generic (empty) set to comply with standard
@@ -575,6 +642,18 @@ for i in data['_embedded']['projects']:
             d['dataset'] = dsts_empty
             print('generic (dummy) dataset added')
 
+        # Fallback if we don't have any information about datasets, to comply with standard
+        if 'dataset' not in d:
+            md['hasDatasets'] = 'false'
+            dsts_empty = []
+            dset_empty = {"type": 'dataset', "title": 'Generic dataset',
+                          "description": 'No individual datasets have been defined for this DMP.',
+                          "dataset_id": {'identifier': str(uuid.uuid4()), 'type': 'other'}, "sensitive_data": 'unknown',
+                          "personal_data": 'unknown'}
+            dsts_empty.append(dset_empty)
+            d['dataset'] = dsts_empty
+            print('generic (dummy) dataset added')
+        
         # Extensions (local)
 
         md['indexed'] = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -729,25 +808,59 @@ for i in data['_embedded']['projects']:
 
         if import_this == 'true':
             try:
-                response = elastic.index(index=esindex, doc_type='dmp', id=dmp_id, document=dmp, ignore=[400, 404])
+                response = elastic.index(index=tmp_index, doc_type='dmp', id=dmp_id, document=dmp, ignore=[400, 404])
                 # print(str(dmp))
                 print('response: ' + str(response))
                 print(dmp_id + ' was imported!')
+                count += 1
             except elasticsearch.exceptions.RequestError as e:
-                if e.error == 'resource_already_exists_exception':
-                    print(dmp_id + ' already exists.')
-                    pass  # Doc already exists. Ignore, it will be updated.
-                else:  # Other exception - raise it
-                    logger.error('Error when writing doc id: ' + dmp_id + ' to index.' + e.error)
-                    print('Error when writing doc id: ' + dmp_id + ' to index.' + e.error)
-                    raise e
-                    sys.exit()
+                logger.error('Error when writing doc id: ' + dmp_id + ' to index: ' + e.error)
+                print('Error when writing doc id: ' + dmp_id + ' to index: ' + e.error)
+                index_errors += 1
         else:
             print('DMP id ' + str(dmp_id) + ' was NOT imported.')
 
         print('\n')
-        count += 1
 
-logger.warning('Successfully indexed ' + str(count) + ' items.')
-print('Successfully indexed ' + str(count) + ' items. Exiting now.')
-sys.exit()
+logger.warning('Indexed ' + str(count) + ' items with ' + str(index_errors) + ' error(s).')
+print('Indexed ' + str(count) + ' items with ' + str(index_errors) + ' error(s).')
+
+if index_errors == 0:
+    # Find the real index currently behind the alias (if any)
+    old_real_index = None
+    try:
+        aliases = elastic.indices.get_alias(name=esindex)
+        if aliases:
+            old_real_index = list(aliases.keys())[0]
+    except Exception:
+        pass
+
+    # If esindex exists as a real index (not alias), delete it first
+    if old_real_index is None and elastic.indices.exists(index=esindex):
+        elastic.indices.delete(index=esindex)
+
+    # Atomically point the alias at the new index
+    actions = []
+    if old_real_index:
+        actions.append({'remove': {'index': old_real_index, 'alias': esindex}})
+    actions.append({'add': {'index': tmp_index, 'alias': esindex}})
+    elastic.indices.update_aliases(body={'actions': actions})
+
+    # Remove the old real index
+    if old_real_index:
+        elastic.indices.delete(index=old_real_index)
+
+    # Clean up any orphaned tmp indexes from previous runs
+    old_tmps = [idx for idx in elastic.indices.get(index=esindex + '.*') if idx != tmp_index]
+    for idx in old_tmps:
+        elastic.indices.delete(index=idx)
+        logger.warning('Deleted orphaned tmp index: ' + idx)
+        print('Deleted orphaned tmp index: ' + idx)
+
+    logger.warning('Production alias ' + esindex + ' now points to ' + tmp_index + '.')
+    print('Production alias ' + esindex + ' now points to ' + tmp_index + '. Done.')
+else:
+    elastic.indices.delete(index=tmp_index)
+    logger.error('Indexing failed with ' + str(index_errors) + ' error(s). Temporary index deleted, production unchanged.')
+    print('Indexing failed. Temporary index deleted, production index unchanged.')
+    sys.exit(1)

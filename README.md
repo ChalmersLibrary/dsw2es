@@ -1,4 +1,4 @@
-Simple script solution for converting and importing DS Wizard questionnaires (DMPs) as RDA Common maDMP 1.1 json records into an external Elastic index, for use with an API or other machine actionable services, such as https://github.com/ChalmersLibrary/cth-dmps-api.
+Simple script solution for converting and importing DS Wizard questionnaires (DMPs) as RDA Common maDMP 1.2 JSON records into an external Elastic index, for use with an API or other machine actionable services, such as https://github.com/ChalmersLibrary/cth-dmps-api.
 
 Requirements:
 * An instance of Data Stewardship Wizard, version 4.x, with full access (admin) to the API (/wizard-api).
