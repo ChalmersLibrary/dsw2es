@@ -127,11 +127,9 @@ for i in data['_embedded']['projects']:
         if 'knowledgeModelPackage' in i:
             d['description'] = "This DMP has been created using Chalmers Data Stewardship Wizard (dsw.chalmers.se) " \
                                  "and is based on the knowledge model " + \
-                                 i['knowledgeModelPackage']['name'] + " (" + i['knowledgeModelPackage']['id'] + ")."
-            if "swe" in i['knowledgeModelPackage']['id']:
-                d['language'] = 'swe'
-            else:
-                d['language'] = 'eng'
+                                 i['knowledgeModelPackage']['name'] + " (version: " + i['knowledgeModelPackage']['version'] + ")."
+            
+            d['language'] = 'eng'
         else:
             d['description'] = "This DMP has been created using Chalmers Data Stewardship Wizard (dsw.chalmers.se)."
             d['language'] = 'eng'
@@ -265,7 +263,7 @@ for i in data['_embedded']['projects']:
                             ct["affiliation"] = [{"name": affiliation_other_name,
                                                   "affiliation_id": {"identifier": affiliation_other_id, "type": "ror"}}]
                         # HE
-                        if 'root-he' in data_full['knowledgeModelPackageId']:
+                        if 'root-he' in data_full['knowledgeModelPackage']['kmId']:
                             if affiliation_node in data_full['replies']:
                                 affiliation_he = affiliation_node
                                 affiliation_he_name = data_full['replies'][affiliation_he]['value']['value'][
@@ -717,7 +715,7 @@ for i in data['_embedded']['projects']:
                 storage_needs = 'unknown'
             md['storage_needs'] = storage_needs
 
-        if 'root-he' in data_full['knowledgeModelPackageId']:
+        if 'root-he' in data_full['knowledgeModelPackage']['kmId']:
             if config.get('Paths', 'metadata.storage_needs_he') in data_full['replies']:
                 storage_needs_id = \
                     data_full['replies'][config.get('Paths', 'metadata.storage_needs_he')][
